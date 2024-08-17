@@ -73,13 +73,14 @@ button:hover {
 </head>
 <body>
     <div class="container">
-        <form action="/submit_registration" method="post">
+        <form id="registrationForm">
             <h2>User Registration</h2>
 
             <label for="firstname">First Name</label>
-            <input type="text" id="firstName" name="firstName" pattern="[A-Za-z]+" title="Last name should not contain alphabets" required>
+            <input type="text" id="firstName" name="firstName" pattern="[A-Za-z]+" title="First name should contain only alphabets" required>
+
             <label for="lastname">Last Name</label>
-            <input type="text" id="lastName" name="lastName" pattern="[A-Za-z]+" title="Last name should not contain alphabets" required>
+            <input type="text" id="lastName" name="lastName" pattern="[A-Za-z]+" title="Last name should contain only alphabets" required>
 
             <label for="mobile">Mobile Number</label>
             <input type="number" id="mobile" name="mobile" required>
@@ -107,9 +108,55 @@ button:hover {
 
             <button type="submit">Submit</button>
         </form>
-        
     </div>
     
-   
+    <div id="userList">
+        <h3>Connected Users:</h3>
+        <ul id="activeUsers"></ul>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        document.getElementById('registrationForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            fetch('/submit_registration', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    socket.emit('join', {
+                        email: formData.get('email'),
+                        name: `${formData.get('firstName')} ${formData.get('lastName')}`
+                    });
+                    alert('Registration successful!');
+                } else {
+                    alert('Registration failed. Please try again.');
+                }
+            });
+        });
+
+        socket.on('userList', (users) => {
+            const userList = document.getElementById('activeUsers');
+            userList.innerHTML = '';
+            users.forEach(user => {
+                const li = document.createElement('li');
+                li.textContent = `${user.name} (${user.email})`;
+                li.onclick = () => showUserDetails(user.email);
+                userList.appendChild(li);
+            });
+        });
+
+        function showUserDetails(email) {
+            fetch(`/user/${email}`)
+                .then(response => response.json())
+                .then(user => {
+                    alert(JSON.stringify(user, null, 2));
+                })
+                .catch(error => console.error('Error:', error));
+        }
+    </script>
 </body>
 </html>

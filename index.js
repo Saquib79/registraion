@@ -2,11 +2,15 @@ const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
+const http = require('http');
+const socketIo = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
 const PORT = process.env.PORT || 3000;
 
-// Middleware to serve static files from the 'public' directory
+// Middleware
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -39,9 +43,43 @@ const userSchema = new mongoose.Schema({
 // Define Model
 const User = mongoose.model('User', userSchema);
 
+// Socket.io connection handling
+io.on('connection', (socket) => {
+    console.log('New client connected');
+
+    socket.on('join', (userData) => {
+        socket.join('live_users');
+        socket.userData = userData;
+        io.to('live_users').emit('userList', getActiveUsers());
+    });
+
+    socket.on('disconnect', () => {
+        console.log('Client disconnected');
+        io.to('live_users').emit('userList', getActiveUsers());
+    });
+});
+
+function getActiveUsers() {
+    const activeUsers = [];
+    const sockets = io.sockets.adapter.rooms.get('live_users');
+    if (sockets) {
+        for (const socketId of sockets) {
+            const socket = io.sockets.sockets.get(socketId);
+            if (socket.userData) {
+                activeUsers.push({
+                    email: socket.userData.email,
+                    name: socket.userData.name,
+                    socketId: socket.id
+                });
+            }
+        }
+    }
+    return activeUsers;
+}
+
 // Route to serve the registration form
 app.get('/', (req, res) => {
-    const filePath = path.join(__dirname, 'Task1', 'public', 'index.html');
+    const filePath = path.join(__dirname, 'public', 'index.html');
     console.log('Serving index.html from:', filePath);
     res.sendFile(filePath, (err) => {
         if (err) {
@@ -53,7 +91,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// Placeholder route for form submission
+// Route for form submission
 app.post('/submit_registration', async (req, res) => {
     const newUser = new User({
         firstName: req.body.firstName,
@@ -73,6 +111,13 @@ app.post('/submit_registration', async (req, res) => {
     try {
         await newUser.save();
         console.log('User registered successfully');
+        
+        // Emit event to join the user to the room
+        io.emit('newUser', {
+            email: newUser.email,
+            name: `${newUser.firstName} ${newUser.lastName}`,
+        });
+        
         res.status(200).send('User registered successfully!');
     } catch (err) {
         console.error('Error registering new user:', err);
@@ -80,6 +125,20 @@ app.post('/submit_registration', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+// Route to get user details
+app.get('/user/:email', async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.params.email });
+        if (user) {
+            res.json(user);
+        } else {
+            res.status(404).send('User not found');
+        }
+    } catch (err) {
+        res.status(500).send('Error fetching user data');
+    }
+});
+
+server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
